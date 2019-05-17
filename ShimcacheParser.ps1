@@ -1,10 +1,19 @@
 ﻿<#
 .SYNOPSIS
-	ShimcacheParser.ps1 parses the Registry Application Compatibility Cache on a live system, more common called Shimcache, and exports it to a CSV file.
+    Windows Application Compatibility Database is used by windows to identify possible application compatibility challenges with executables.
+    Any executable that runs on a Windows system can be found in this key.
+	ShimcacheParser.ps1 parses the Registry Application Compatibility Cache on a live system, more common called Shimcache, and exports it to a CSV and/or HTML file.
     Working for versions: Win10, Win8.1 x64, Win7 x64, Win7 x86
 
+.DESCRIPTION
+	ShimcacheParser.ps1 parses the Registry Application Compatibility Cache on a live system, more common called Shimcache, and exports it to a CSV and/or HTML file.
+
 .EXAMPLE
-	ShimcacheParser.ps1
+	ShimcacheParser.ps1 -CSV
+
+.EXAMPLE
+	ShimcacheParser.ps1 -HTML
+
 
 .NOTES
     Author:  f4d0
@@ -17,6 +26,60 @@
     f4d0.eu
 #>
 
+param (
+    
+    <# Export information to CSV format #>
+    [switch]$CSV=$false,
+    
+    <# Export information to HTML format #>
+    [switch]$HTML=$false,
+
+    <# Show information in the screen #>
+    [switch]$SCREEN=$false
+)
+
+if($CSV -eq $false -and $HTML -eq $false -and $SCREEN -eq $false)
+{
+    cls
+
+    echo ""
+    echo ""
+    Write-Host "`tNo output option selected. To get more info, please type:" -ForegroundColor Red
+    Write-Host "`t`tGet-Help ShimcacheParser.ps1" -ForegroundColor Green
+    
+    echo ""
+    echo ""
+    echo ""
+
+    exit
+}
+
+Function Write-Html-Header{
+    echo "<!DOCTYPE HTML PUBLIC `"-//W3C//DTD HTML 3.2 Final//EN`">" > "$($hostname)_Shimcache.html"
+    echo "<html><head><title> SHIMCACHE </title></head>" >> "$($hostname)_Shimcache.html"
+    echo "<body>" >> "$($hostname)_Shimcache.html"
+    echo "<h4>Shimcache Parser</h4>"
+    echo "<br><h4>Creators webpage: <a href=`"http://f4d0.eu/`" target=`"newwin`">http://www.f4d0.eu</a></h4><h4>Creators github: <a href=`"https://github.com/nrrpinto`" target=`"newwin`">https://github.com/nrrpinto</a></h4><p>" >> "$($hostname)_Shimcache.html"
+    echo "<table border=`"1`" cellpadding=`"5`"><tr bgcolor=`"E0E0E0`"> " >> "$($hostname)_Shimcache.html"
+    echo "<th>Position" >> "$($hostname)_Shimcache.html"
+    echo "<th>Path" >> "$($hostname)_Shimcache.html"
+    echo "<th>Modified" >> "$($hostname)_Shimcache.html"
+}
+
+Function Write-Html-Line{
+    param(
+        [string]$position = "",
+        [string]$path = "",
+        [string]$modified = ""
+    )
+
+    echo "<tr><td bgcolor=#FFFFFF nowrap> $position <td bgcolor=#FFFFFF nowrap> $path <td bgcolor=#FFFFFF nowrap> $modified" >> "$($hostname)_Shimcache.html"
+}
+
+Function Write-Html-Finish {
+    echo "</table>" >> "$($hostname)_Shimcache.html"
+    echo "</body></html>" >> "$($hostname)_Shimcache.html"
+}
 
 $OS = ((Get-WmiObject win32_operatingsystem).name).split(" ")[2] 
 $ARCH = $env:PROCESSOR_ARCHITECTURE
@@ -28,7 +91,9 @@ if($OS -eq "10") <# TESTED: Win10 #>
     $index=[System.BitConverter]::ToInt32($content,0)
     $Position = 0
 
-    echo "Position, Path, Modified" > Shimcache.csv
+    if($CSV) { echo "Position, Path, Modified" > "$($hostname)_Shimcache.csv" }
+    if($HTML) { Write-Html-Header }
+    if($SCREEN) { Write-Host "Position | Path | Modified" -ForegroundColor Green }
 
     while($index -lt $content.length)
     {
@@ -78,7 +143,9 @@ if($OS -eq "10") <# TESTED: Win10 #>
         $index += $DataSize
         #echo "Data: $Data"
 
-        echo "$Position, $Path, $LastModifiedTimeUTC" >> Shimcache.csv
+        if($CSV) { echo "$Position, $Path, $LastModifiedTimeUTC" >> "$($hostname)_Shimcache.csv" }
+        if($HTML) { Write-Html-Line -position $Position -path $Path -modified $LastModifiedTimeUTC }
+        if($SCREEN) { echo "$Position | $Path | $LastModifiedTimeUTC"}
 
     }
 }
@@ -90,7 +157,9 @@ if($OS -like "8*") <# TESTED: Win8.1x64 #>
     $index=128
     $Position = 0
 
-    echo "Position, Path, Modified" > Shimcache.csv
+    if($CSV) { echo "Position, Path, Modified" > "$($hostname)_Shimcache.csv" }
+    if($HTML) { Write-Html-Header }
+    if($SCREEN) { Write-Host "Position | Path | Modified" -ForegroundColor Green }
 
     while($index -lt $content.length)
     {
@@ -155,8 +224,21 @@ if($OS -like "8*") <# TESTED: Win8.1x64 #>
         $index += $DataSize
         #echo "Data: $Data"
 
-        if ($Path -eq "") { echo "$Position, Package:\$Package, $LastModifiedTimeUTC" >> Shimcache.csv }
-        else { echo "$Position, $Path, $LastModifiedTimeUTC" >> Shimcache.csv }
+        if ($Path -eq "") 
+        { 
+            
+            if($CSV) { echo "$Position, Package:\$Package, $LastModifiedTimeUTC" >> "$($hostname)_Shimcache.csv" }
+            if($HTML) { Write-Html-Line -position $Position -path "Package:\$Package" -modified $LastModifiedTimeUTC }
+            if($SCREEN) { echo "$Position | Package:\$Package | $LastModifiedTimeUTC"}
+        }
+        else 
+        { 
+            if($CSV) { echo "$Position, $Path, $LastModifiedTimeUTC" >> "$($hostname)_Shimcache.csv" }
+            if($HTML) { Write-Html-Line -position $Position -path $Path -modified $LastModifiedTimeUTC }
+            if($SCREEN) { echo "$Position | $Path | $LastModifiedTimeUTC"}
+        }
+
+        
 
     }
 }
@@ -168,9 +250,11 @@ if($OS -eq "7") <# TESTED: Win7x64, Win7x86 #>
     $index=128
     $Position = 0
     $limit = [System.BitConverter]::ToInt32($content, 4);
-    echo "Limit: $limit"
+    #echo "Limit: $limit"
 
-    echo "Position, Path, Modified" > Shimcache.csv
+    if($CSV) { echo "Position, Path, Modified" > "$($hostname)_Shimcache.csv" }
+    if($HTML) { Write-Html-Header }
+    if($SCREEN) { Write-Host "Position | Path | Modified" -ForegroundColor Green }
 
     while($index -lt $content.length)
     {
@@ -221,8 +305,6 @@ if($OS -eq "7") <# TESTED: Win7x64, Win7x86 #>
             #echo "Path: $Path"
 
 
-            echo "$Position, $Path, $LastModifiedTimeUTC" >> Shimcache.csv
-            
             if ($Position -eq $limit) { break }
         }
         else # x86 arch
@@ -268,9 +350,13 @@ if($OS -eq "7") <# TESTED: Win7x64, Win7x86 #>
             echo "Path: $Path"
 
 
-            echo "$Position, $Path, $LastModifiedTimeUTC" >> Shimcache.csv
-            
             if ($Position -eq $limit) { break }
         }
+
+        if($CSV) { echo "$Position, $Path, $LastModifiedTimeUTC" >> "$($hostname)_Shimcache.csv" }
+        if($HTML) { Write-Html-Line -position $Position -path $Path -modified $LastModifiedTimeUTC }
+        if($SCREEN) { echo "$Position | $Path | $LastModifiedTimeUTC"}
     }
 }
+
+if($HTML) { Write-Html-Finish }
